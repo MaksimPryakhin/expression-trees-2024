@@ -1,5 +1,5 @@
 #include "transform.h"
-
+#include <stdlib.h>
 #include <assert.h>
 #include <float.h>
 #include <math.h>
@@ -9,6 +9,7 @@
 // @NOTE: Put transformer functions prototypes here
 static bool factor_difference_of_squares(Expression* const expression);
 static bool fold_multipliers_to_diff_of_squares(Expression* const expression);
+static bool reduce_multiplying_to_diff(Expression* const expression);
 
 // Make deep copy of a given expression.
 static Expression* expression_copy(const Expression* const expression);
@@ -24,6 +25,7 @@ void simplify_expression(Expression* const expression)
 
 	// @NOTE: Put simplification transformer functions here
 	fold_multipliers_to_diff_of_squares(expression);
+    reduce_multiplying_to_diff(expression);
 }
 
 void expand_expression(Expression* const expression)
@@ -84,6 +86,64 @@ double evaluate_expression(const Expression* const expression)
 
 	// @NOTE: ExpressionType_Empty and LiteralTag_Symbol case
 	return 0;
+}
+
+//My func
+
+static bool reduce_multiplying_to_diff(Expression* const expression) {
+    assert(expression != NULL);
+
+    switch (expression->type) {
+        case ExpressionType_Unary: {
+            UnaryExpression* const unary = (UnaryExpression*)expression;
+            return reduce_multiplying_to_diff(unary->subexpression);
+        } break;
+
+        case ExpressionType_Binary: {
+            BinaryExpression* const binary = (BinaryExpression*)expression;
+
+            bool other_result = reduce_multiplying_to_diff(binary->left) |
+                                      reduce_multiplying_to_diff(binary->right);
+
+            Expression* expr = NULL;
+            BinaryExpression* difference = NULL;
+
+            if (binary->operator != TokenType_Multiply) {
+                return other_result;
+            }
+
+            if (binary->right->type == ExpressionType_Binary &&
+                ((BinaryExpression*)binary->right)->operator == TokenType_Minus) {
+
+                expr = binary->left;
+                difference = (BinaryExpression*)binary->right;
+            }
+
+            else if (binary->left->type == ExpressionType_Binary &&
+                     ((BinaryExpression*)binary->left)->operator == TokenType_Minus) {
+
+                expr = binary->right;
+                difference = (BinaryExpression*)binary->left;
+            }
+
+            else {
+                return other_result;
+            }
+
+            Expression* left_product = (Expression*)expression_binary_create(TokenType_Multiply, expression_copy(expr), expression_copy(difference->left));
+            Expression* right_product = (Expression*)expression_binary_create(TokenType_Multiply, expression_copy(expr), expression_copy(difference->right));
+
+            binary->operator = TokenType_Minus;
+            expression_destroy(&binary->left);  
+            expression_destroy(&binary->right);
+            binary->left = left_product;
+            binary->right = right_product;
+            other_result = other_result | reduce_multiplying_to_diff(binary->left) |
+                                      reduce_multiplying_to_diff(binary->right);
+            return true;
+        } break;
+    }
+    return false;
 }
 
 //
@@ -409,4 +469,3 @@ static bool expression_equal(const Expression* const lhs,
 
 	return false;
 }
-
